@@ -3,6 +3,8 @@ const express = require('express');
 const { Telegraf } = require('telegraf');
 const cors = require('cors');
 
+const { main: analyzeMealImage } = require('../Model/test-groq.js');
+
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -15,60 +17,90 @@ const bot = new Telegraf(BOT_TOKEN);
 let cloudBuffer = [];
 
 app.use('/telegram-webhook', (req, res, next) => {
-  console.log("🔔 Richiesta webhook ricevuta da Telegram!");
-  next();
+    console.log("🔔 Richiesta webhook ricevuta da Telegram!");
+    next();
 });
 
 app.use(bot.webhookCallback('/telegram-webhook'));
 
 bot.start((ctx) => {
-  ctx.reply("Benvenuto! Bot collegato con successo.");
+    ctx.reply("Benvenuto! Bot collegato con successo.");
 });
 
+async function getTelegramFileUrl(fileId) {
+
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`);
+    if (!res.ok) {
+        throw new Error(`Telegram getFile fallito: HTTP ${res.status}`);
+    }
+    const data = await res.json();
+
+    if (!data.ok) {
+        throw new Error("Impossibile recuperare il file da Telegram");
+    }
+
+    const filePath = data.result.file_path;
+
+    return `https://api.telegram.org/file/bot${BOT_TOKEN}/${filePath}`;
+}
+
 bot.on('photo', async (ctx) => {
-  try {
-    const photos = ctx.message.photo;
-    const bestPhoto = photos[photos.length - 1];
-    const fileId = bestPhoto.file_id;
+    try {
+        const photos = ctx.message.photo;
+        const bestPhoto = photos[photos.length - 1];
+        const fileId = bestPhoto.file_id;
 
-    cloudBuffer.push({
-      type: 'meal',
-      timestamp: new Date(),
-      telegram_file_id: fileId,
-      status: 'pending_ai_analysis'
-    });
 
-    console.log(`Img id salvato: ${fileId}`);
-    await ctx.reply("📸 Foto ricevuta e salvata nel cloud temporaneo!");
-  } catch (error) {
-    console.error("Errore gestione foto:", error);
-    await ctx.reply("❌ Errore durante il salvataggio.");
-  }
+
+        console.log(`Foto Telegram ricevuta (file_id: ${fileId}); recupero URL immagine`);
+        const img = await getTelegramFileUrl(fileId);
+        console.log("URL immagine recuperato; avvio analisi Groq");
+        const nutrition = await analyzeMealImage(img);
+        console.log("Analisi Groq completata; aggiunta al buffer");
+        
+        const new_data = {
+            type: 'meal',
+            timestamp: new Date(),
+            telegram_file_id: fileId,
+            status: 'analyzed',
+            nutrition
+        };
+        cloudBuffer.push(new_data);
+        console.log(new_data);
+        
+        await ctx.reply("✅ Foto analizzata e salvata nel cloud temporaneo!");
+
+    } catch (error) {
+        console.error("Errore gestione foto:", error);
+        await ctx.reply("❌ Errore durante l'analisi o il salvataggio della foto.");
+    }
 });
 
 app.get('/api/sync/pull', (req, res) => {
-  res.json({ success: true, data: cloudBuffer });
+    console.log("Server pullato correttamente")
+    res.json({ success: true, data: cloudBuffer });
 });
 
 app.post('/api/sync/ack', (req, res) => {
-  cloudBuffer = [];
-  res.json({ success: true, message: "Cloud ripulito!" });
+    console.log("Server buffer svuotato");
+    cloudBuffer = [];
+    res.json({ success: true, message: "Cloud ripulito!" });
 });
 
 app.get('/', (req, res) => {
-  res.send('Fit Server con Webhook attivo! 🚀');
+    res.send('Fit Server con Webhook attivo! 🚀');
 });
 
 const PORT = process.env.PORT || 3000;
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
 
 app.listen(PORT, async () => {
-  console.log(`Server avviato sulla porta ${PORT}`);
+    console.log(`Server avviato sulla porta ${PORT}`);
 
-  if (RENDER_URL) {
-    await bot.telegram.setWebhook(`${RENDER_URL}/telegram-webhook`);
-    console.log(`🔗 Webhook Telegram impostato su: ${RENDER_URL}/telegram-webhook`);
-  }
+    if (RENDER_URL) {
+        await bot.telegram.setWebhook(`${RENDER_URL}/telegram-webhook`);
+        console.log(`🔗 Webhook Telegram impostato su: ${RENDER_URL}/telegram-webhook`);
+    }
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
