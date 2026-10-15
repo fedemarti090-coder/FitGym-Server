@@ -78,7 +78,7 @@ bot.on('photo', async (ctx) => {
 
     } catch (error) {
         console.error("Errore gestione foto:", error);
-        await ctx.reply("❌ Errore durante l'analisi o il salvataggio della foto.");
+        await ctx.reply(`❌ Errore (${error})`);
     }
 });
 
