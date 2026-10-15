@@ -7,6 +7,40 @@ const PROMPT =
   'Sei un nutrizionista esperto. Analizza la foto del pasto, stima gli ingredienti visibili, il nome del piatto e calcola i macronutrienti totali. Restituisci l\'output ESCLUSIVAMENTE in formato JSON valido con questa struttura esatta: {"dish_name": "string", "calories": number, "protein": number, "carbs": number, "fat": number}';
 const EXPECTED_KEYS = ["dish_name", "calories", "protein", "carbs", "fat"];
 
+function detectImageMimeType(buffer, contentType) {
+  if (
+    buffer.length >= 3 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff
+  ) {
+    return "image/jpeg";
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+  ) {
+    return "image/png";
+  }
+  if (
+    buffer.length >= 12 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  if (
+    buffer.length >= 6 &&
+    ["GIF87a", "GIF89a"].includes(buffer.toString("ascii", 0, 6))
+  ) {
+    return "image/gif";
+  }
+  if (contentType?.startsWith("image/")) {
+    return contentType;
+  }
+  return null;
+}
+
 async function main(imageUrl) {
   const startedAt = Date.now();
   let stage = "configurazione";
@@ -34,17 +68,19 @@ async function main(imageUrl) {
       throw new Error(`Download immagine fallito: HTTP ${imageResponse.status}`);
     }
 
-    const mimeType = imageResponse.headers
+    const contentType = imageResponse.headers
       .get("content-type")
       ?.split(";")[0]
       .trim();
-    if (!mimeType?.startsWith("image/")) {
-      throw new Error(`Tipo di contenuto immagine non valido: ${mimeType}`);
-    }
-
     const imageBuffer = Buffer.from(await imageResponse.arrayBuffer());
     if (imageBuffer.length === 0) {
       throw new Error("L'immagine scaricata è vuota");
+    }
+    const mimeType = detectImageMimeType(imageBuffer, contentType);
+    if (!mimeType) {
+      throw new Error(
+        `Tipo di contenuto immagine non valido: header "${contentType ?? "assente"}" e formato non riconosciuto`,
+      );
     }
     log(`Immagine ricevuta: ${mimeType}, ${imageBuffer.length} byte`);
 
