@@ -7,12 +7,23 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+app.set('trust proxy', true);
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new Telegraf(BOT_TOKEN);
 
 let cloudBuffer = [];
 
+app.use('/telegram-webhook', (req, res, next) => {
+  console.log("🔔 Richiesta webhook ricevuta da Telegram!");
+  next();
+});
+
 app.use(bot.webhookCallback('/telegram-webhook'));
+
+bot.start((ctx) => {
+  ctx.reply("Benvenuto! Bot collegato con successo.");
+});
 
 bot.on('photo', async (ctx) => {
   try {
@@ -57,8 +68,6 @@ app.listen(PORT, async () => {
   if (RENDER_URL) {
     await bot.telegram.setWebhook(`${RENDER_URL}/telegram-webhook`);
     console.log(`🔗 Webhook Telegram impostato su: ${RENDER_URL}/telegram-webhook`);
-  } else {
-    console.log("⚠️ RENDER_URL non trovato: assicurati di impostarlo o di essere online.");
   }
 });
 
