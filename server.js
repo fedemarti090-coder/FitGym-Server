@@ -1,5 +1,4 @@
 require('dotenv').config();
-
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const cors = require('cors');
@@ -12,6 +11,8 @@ const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const bot = new Telegraf(BOT_TOKEN);
 
 let cloudBuffer = [];
+
+app.use(bot.webhookCallback('/telegram-webhook'));
 
 bot.on('photo', async (ctx) => {
   try {
@@ -26,22 +27,39 @@ bot.on('photo', async (ctx) => {
       status: 'pending_ai_analysis'
     });
 
-    console.log(`Img id: ${fileId}`);
-
-    await ctx.reply("📸 Foto ricevuta e salvata nel cloud temporaneo! Ti aggiorno presto.");
+    console.log(`Img id salvato: ${fileId}`);
+    await ctx.reply("📸 Foto ricevuta e salvata nel cloud temporaneo!");
   } catch (error) {
     console.error("Errore gestione foto:", error);
-    await ctx.reply("❌ Errore durante il salvataggio della foto.");
+    await ctx.reply("❌ Errore durante il salvataggio.");
   }
 });
 
-const PORT = process.env.PORT || 3000;
+app.get('/api/sync/pull', (req, res) => {
+  res.json({ success: true, data: cloudBuffer });
+});
 
-app.listen(PORT, () => {
+app.post('/api/sync/ack', (req, res) => {
+  cloudBuffer = [];
+  res.json({ success: true, message: "Cloud ripulito!" });
+});
+
+app.get('/', (req, res) => {
+  res.send('Fit Server con Webhook attivo! 🚀');
+});
+
+const PORT = process.env.PORT || 3000;
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+
+app.listen(PORT, async () => {
   console.log(`Server avviato sulla porta ${PORT}`);
-  
-  bot.launch();
-  console.log("🤖 Bot Telegram attivo in background nel server.");
+
+  if (RENDER_URL) {
+    await bot.telegram.setWebhook(`${RENDER_URL}/telegram-webhook`);
+    console.log(`🔗 Webhook Telegram impostato su: ${RENDER_URL}/telegram-webhook`);
+  } else {
+    console.log("⚠️ RENDER_URL non trovato: assicurati di impostarlo o di essere online.");
+  }
 });
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
