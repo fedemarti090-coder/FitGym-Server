@@ -3,7 +3,7 @@ const express = require('express');
 const { Telegraf } = require('telegraf');
 const cors = require('cors');
 
-const { main: analyzeMealImage } = require('../Model/test-groq.js');
+const { main: analyzeMealImage } = require('./test-groq.js');
 
 const app = express();
 app.use(express.json());
