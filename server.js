@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('node:path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const { Telegraf } = require('telegraf');
 const cors = require('cors');
@@ -12,6 +13,9 @@ app.use(cors());
 app.set('trust proxy', true);
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+if (!BOT_TOKEN) {
+    throw new Error('TELEGRAM_BOT_TOKEN non configurato nelle variabili d’ambiente');
+}
 const bot = new Telegraf(BOT_TOKEN);
 
 let cloudBuffer = [];
@@ -29,7 +33,9 @@ bot.start((ctx) => {
 
 async function getTelegramFileUrl(fileId) {
 
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`);
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`, {
+        signal: AbortSignal.timeout(30000)
+    });
     if (!res.ok) {
         throw new Error(`Telegram getFile fallito: HTTP ${res.status}`);
     }
@@ -91,15 +97,22 @@ app.get('/', (req, res) => {
     res.send('Fit Server con Webhook attivo! 🚀');
 });
 
-const PORT = process.env.PORT || 3000;
-const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+const PORT = Number(process.env.PORT) || 3000;
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL?.replace(/\/+$/, '');
 
-app.listen(PORT, async () => {
+app.listen(PORT, () => {
     console.log(`Server avviato sulla porta ${PORT}`);
 
     if (RENDER_URL) {
-        await bot.telegram.setWebhook(`${RENDER_URL}/telegram-webhook`);
-        console.log(`🔗 Webhook Telegram impostato su: ${RENDER_URL}/telegram-webhook`);
+        bot.telegram.setWebhook(`${RENDER_URL}/telegram-webhook`)
+            .then(() => {
+                console.log(`🔗 Webhook Telegram impostato su: ${RENDER_URL}/telegram-webhook`);
+            })
+            .catch((error) => {
+                console.error('Errore durante la configurazione del webhook Telegram:', error);
+            });
+    } else {
+        console.warn('RENDER_EXTERNAL_URL non configurato: webhook Telegram non impostato');
     }
 });
 
