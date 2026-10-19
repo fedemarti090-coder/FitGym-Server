@@ -4,6 +4,8 @@ const express = require('express');
 const { Telegraf } = require('telegraf');
 const cors = require('cors');
 
+const { initServerDb, saveMealToBuffer, getPendingMeals, clearMealBuffer } = require('./serverDb.js');
+
 const { main: analyzeMealImage } = require('./test-groq.js');
 
 const app = express();
@@ -12,13 +14,13 @@ app.use(cors());
 
 app.set('trust proxy', true);
 
+initServerDb();
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 if (!BOT_TOKEN) {
     throw new Error('TELEGRAM_BOT_TOKEN non configurato nelle variabili d’ambiente');
 }
 const bot = new Telegraf(BOT_TOKEN);
-
-let cloudBuffer = [];
 
 app.use('/telegram-webhook', (req, res, next) => {
     console.log("🔔 Richiesta webhook ricevuta da Telegram!");
@@ -32,7 +34,6 @@ bot.start((ctx) => {
 });
 
 async function getTelegramFileUrl(fileId) {
-
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`, {
         signal: AbortSignal.timeout(30000)
     });
@@ -56,13 +57,11 @@ bot.on('photo', async (ctx) => {
         const bestPhoto = photos[photos.length - 1];
         const fileId = bestPhoto.file_id;
 
-
-
         console.log(`Foto Telegram ricevuta (file_id: ${fileId}); recupero URL immagine`);
         const img = await getTelegramFileUrl(fileId);
         console.log("URL immagine recuperato; avvio analisi Groq");
         const nutrition = await analyzeMealImage(img);
-        console.log("Analisi Groq completata; aggiunta al buffer");
+        console.log("Analisi Groq completata; salvataggio su SQLite");
         
         const new_data = {
             type: 'meal',
@@ -71,10 +70,11 @@ bot.on('photo', async (ctx) => {
             status: 'analyzed',
             nutrition
         };
-        cloudBuffer.push(new_data);
+
+        saveMealToBuffer(new_data);
         console.log(new_data);
         
-        await ctx.reply(`✅ Foto analizzata e salvata nel cloud temporaneo! ${JSON.stringify(nutrition)}`);
+        await ctx.reply(`✅ Foto analizzata e salvata nel database SQLite del server! ${JSON.stringify(nutrition)}`);
 
     } catch (error) {
         console.error("Errore gestione foto:", error);
@@ -83,18 +83,19 @@ bot.on('photo', async (ctx) => {
 });
 
 app.get('/api/sync/pull', (req, res) => {
-    console.log("Server pullato correttamente")
-    res.json({ success: true, data: cloudBuffer });
+    console.log("Server pullato correttamente (lettura da DB)");
+    const data = getPendingMeals();
+    res.json({ success: true, data });
 });
 
 app.post('/api/sync/ack', (req, res) => {
-    console.log("Server buffer svuotato");
-    cloudBuffer = [];
-    res.json({ success: true, message: "Cloud ripulito!" });
+    console.log("Svuotamento buffer SQLite completato");
+    clearMealBuffer();
+    res.json({ success: true, message: "Cloud ripulito dal database!" });
 });
 
 app.get('/', (req, res) => {
-    res.send('Fit Server con Webhook attivo! 🚀');
+    res.send('Fit Server con Webhook attivo e SQLite persistente! 🚀');
 });
 
 const PORT = Number(process.env.PORT) || 3000;
