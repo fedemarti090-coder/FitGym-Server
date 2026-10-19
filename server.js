@@ -74,7 +74,7 @@ bot.on('photo', async (ctx) => {
         cloudBuffer.push(new_data);
         console.log(new_data);
         
-        await ctx.reply("✅ Foto analizzata e salvata nel cloud temporaneo!");
+        await ctx.reply(`✅ Foto analizzata e salvata nel cloud temporaneo! ${nutrition}`);
 
     } catch (error) {
         console.error("Errore gestione foto:", error);
