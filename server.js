@@ -6,7 +6,7 @@ const cors = require('cors');
 
 const { initServerDb, saveMealToBuffer, getPendingMeals, clearMealBuffer } = require('./serverDb.js');
 
-const { main: analyzeMealImage } = require('./test-groq.js');
+const { main: analyzeMealImage } = require('./lib/groq.js');
 
 const app = express();
 app.use(express.json());
